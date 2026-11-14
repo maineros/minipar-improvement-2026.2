@@ -18,12 +18,15 @@ Luiz Miguel de Melo Bomfim - [luizwhirl](https://github.com/luizwhirl)
 ```text
 minipar_python/
 ├── src/
+│   ├── interfaces.py     # Interfaces dos componentes (I_Lexico, I_Sintatico, ...)
+│   ├── orquestrador.py   # Componente Orquestrador (MainCompiler)
 │   ├── ast_nodes.py      # Nós da AST (dataclasses)
-│   ├── lexer.py          # Analisador Léxico
-│   ├── parser.py         # Analisador Sintático
-│   ├── semantic.py       # Analisador Semântico
-│   ├── tac.py            # Gerador de Código Intermediário (TAC)
-│   ├── codegen.py        # Gerador de Código C++
+│   ├── lexer.py          # Componente Analisador Léxico
+│   ├── parser.py         # Componente Analisador Sintático
+│   ├── symbol_table.py   # Componente Tabela de Símbolos
+│   ├── semantic.py       # Componente Analisador Semântico
+│   ├── tac.py            # Componente Gerador de Código Intermediário (TAC)
+│   ├── codegen.py        # Componente Gerador de Código C++
 │   └── cpp_template.py   # Template base em C++
 ├── static/               # Arquivos estáticos da IDE Web (CSS, JS)
 ├── templates/            # Arquivos HTML da IDE Web
@@ -245,6 +248,29 @@ Web e uma execução CLI com o mesmo nome de arquivo e conteúdos diferentes.
 | 2 | `semantic.py` | Verificação de declarações, redeclarações e escopo |
 | 3 | `tac.py` | Geração de Código Intermediário (TAC) |
 | 4 | `codegen.py` | Geração de código C++ e compilação automática via `g++ -O3` |
+
+---
+
+## Arquitetura de Componentes
+
+Cada parte do compilador é um componente de software. A interface do componente
+é uma classe abstrata com prefixo `I_` (`src/interfaces.py`) e o componente é a
+classe concreta que herda dela e implementa seus métodos. Os componentes são
+usados sempre pela interface: o orquestrador guarda cada um num atributo do tipo
+da interface.
+
+| Interface | Componente | Arquivo |
+|-----------|------------|---------|
+| `I_Lexico` | `Lexer` | `src/lexer.py` |
+| `I_Sintatico` | `Parser` | `src/parser.py` |
+| `I_TabelaSimbolos` | `TabelaSimbolos` | `src/symbol_table.py` |
+| `I_Semantico` | `SemanticAnalyzer` | `src/semantic.py` |
+| `I_GeradorTAC` | `TACGenerator` | `src/tac.py` |
+| `I_GeradorCPP` | `CppCodeGenerator` | `src/codegen.py` |
+| `I_Orquestrador` | `MainCompiler` | `src/orquestrador.py` |
+| `I_Interface_Usuario` | `MenuCLI` / `IDEWebApp` | `menu.py` / `app.py` |
+
+Os testes de integração dos componentes estão em `tests/test_componentes.py`.
 
 ---
 
