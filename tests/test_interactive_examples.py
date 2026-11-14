@@ -16,12 +16,14 @@ from run_artifacts import executable_path
 
 ROOT = Path(__file__).resolve().parents[1]
 HISTORY = ["1", "0", "0", "0", "0", "1", "0", "0", "0", "1", "0", "0", "1", "0", "0", "0"]
-# These official scenarios retain their prescribed constants. Their full
-# executable output is covered in test_official_fork_join_examples.py.
+# These examples do not read the keyboard and keep fixed constants. The full
+# output of teste8-10 is covered in test_official_fork_join_examples.py, and
+# the output of teste_funcoes_texto is covered in test_funcoes_texto.py.
 OFFICIAL_FIXED_EXAMPLES = {
     "teste8_avaliacao_4_nucleos.minipar",
     "teste9_avaliacao_5_nucleos_mandelbrot.minipar",
     "teste10_avaliacao_6_nucleos_2_fractais.minipar",
+    "teste_funcoes_texto.minipar",
 }
 
 # Each variant describes real execution input and a result of the computation,
