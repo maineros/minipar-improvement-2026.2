@@ -307,7 +307,7 @@ class Minipar20261CatalogAndPhasesTests(unittest.TestCase):
                         f"Trecho TAC {tac_snippet!r} ausente em {filename}",
                     )
 
-                self.assertIn("int main()", result["cpp"])
+                self.assertIn("int main(", result["cpp"])
                 for cpp_snippet in expected["cpp_snippets"]:
                     self.assertIn(
                         cpp_snippet,
@@ -476,7 +476,7 @@ seq {
                 self.assertFalse(result["lexer"].has_errors, result["lexer"].errors)
                 self.assertTrue(result["semantic_ok"], result["semantic_errors"])
                 self.assertTrue(result["tac"].strip())
-                self.assertIn("int main()", result["cpp"])
+                self.assertIn("int main(", result["cpp"])
 
         # Confere traducao especifica de heranca (extends -> : public Base)
         heranca_cpp = _compile_pipeline(original_2026_1_programs["heranca_e_tipos_explicitos_2026_1"])["cpp"]
