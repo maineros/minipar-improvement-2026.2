@@ -1,0 +1,85 @@
+# Carga de medição do MINIP-33: o mesmo trabalho em 3 modos.
+#   1. sequencial (uma tarefa por vez);
+#   2. paralelo local (4 fork neste computador);
+#   3. distribuído (2 fork aqui + 2 fork ... on canal no outro computador).
+# O script benchmarks/medir_fork_join.py marca a hora das linhas "--- N."
+# e de "RESULTADO" para calcular o tempo de cada modo.
+#
+# Como rodar à mão (o mesmo executável nos dois computadores):
+#   Computador 2 (worker):      ./carga_distribuida --worker 7000
+#   Computador 1 (coordenador): ./carga_distribuida  e digite o IP do computador 2
+
+# Trabalho de uma parte: soma inicio + (inicio+1) + ... + fim.
+# Os 3 modos fazem as MESMAS 4 chamadas e somam os 4 resultados na mesma
+# ordem, então os totais saem idênticos (a mesma conta, só que em lugares diferentes).
+func trabalho(inicio, fim) {
+    var s = 0.0;
+    var i = inicio;
+    while (i <= fim) {
+        s = s + i;
+        i = i + 1;
+    }
+    return s;
+}
+
+seq {
+    var ip = input("IP do computador worker: ");
+    var porta = 7000;
+    var outro_computador = c_channel(ip, porta);
+
+    var n = 1200000000;
+    var parte = n / 4;
+    print("=== MINIP-33: carga de", n, "passos em 4 partes ===");
+    print("Worker em:", ip, porta);
+
+    # Modo 1: uma tarefa por vez (fork e join logo em seguida).
+    # Usar fork aqui também deixa os 3 modos com o MESMO código C++ do trabalho;
+    # chamar trabalho() direto no seq faz o g++ otimizar diferente (fica mais lento)
+    # e o speedup sairia inflado.
+    print("--- 1. Sequencial (1 tarefa por vez) ---");
+    var c1 = fork trabalho(1, parte);
+    var s1 = join(c1);
+    var c2 = fork trabalho(parte + 1, 2 * parte);
+    var s2 = join(c2);
+    var c3 = fork trabalho(2 * parte + 1, 3 * parte);
+    var s3 = join(c3);
+    var c4 = fork trabalho(3 * parte + 1, n);
+    var s4 = join(c4);
+    var total_seq = s1 + s2 + s3 + s4;
+
+    print("--- 2. Paralelo local (4 fork neste computador) ---");
+    var a1 = fork trabalho(1, parte);
+    var a2 = fork trabalho(parte + 1, 2 * parte);
+    var a3 = fork trabalho(2 * parte + 1, 3 * parte);
+    var a4 = fork trabalho(3 * parte + 1, n);
+    var p1 = join(a1);
+    var p2 = join(a2);
+    var p3 = join(a3);
+    var p4 = join(a4);
+    var total_par = p1 + p2 + p3 + p4;
+
+    print("--- 3. Distribuido (2 fork aqui + 2 fork no outro computador) ---");
+    var b1 = fork trabalho(1, parte);
+    var b2 = fork trabalho(parte + 1, 2 * parte);
+    var b3 = fork trabalho(2 * parte + 1, 3 * parte) on outro_computador;
+    var b4 = fork trabalho(3 * parte + 1, n) on outro_computador;
+    var r1 = join(b1);
+    var r2 = join(b2);
+    var r3 = join(b3, 60000);
+    var r4 = join(b4, 60000);
+    var total_dist = r1 + r2 + r3 + r4;
+
+    print("--- FIM ---");
+    print("Total sequencial  :", total_seq);
+    print("Total paralelo    :", total_par);
+    print("Total distribuido :", total_dist);
+    if (total_seq == total_par) {
+        if (total_seq == total_dist) {
+            print("RESULTADO: OK, os tres totais batem.");
+        } else {
+            print("RESULTADO: ERRO, o distribuido deu diferente.");
+        }
+    } else {
+        print("RESULTADO: ERRO, o paralelo deu diferente.");
+    }
+}
