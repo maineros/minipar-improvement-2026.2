@@ -241,27 +241,28 @@ public:
     }
 
 private:
+    // Tenta conectar por ate 5 segundos (o outro lado pode ainda estar abrindo).
+    // Usa um socket novo a cada tentativa: depois de um connect que falhou, o
+    // socket nao pode ser reaproveitado (no Windows o connect seguinte falha na hora
+    // ou fica preso). O limite e por tempo, e nao por quantidade de tentativas,
+    // porque no Windows cada conexao recusada demora cerca de 2 s para voltar.
     int connectSocket() {
-        int sock = socket(AF_INET, SOCK_STREAM, 0);
-        if (sock < 0) throw std::runtime_error("Falha ao abrir o canal de envio.");
         struct sockaddr_in serv_addr;
+        std::memset(&serv_addr, 0, sizeof(serv_addr));
         serv_addr.sin_family = AF_INET;
         serv_addr.sin_port = htons(port);
         inet_pton(AF_INET, ip.c_str(), &serv_addr.sin_addr);
-        
-        bool connected = false;
-        for(int i=0; i<50; i++) {
-            if (connect(sock, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) >= 0) {
-                connected = true;
-                break;
-            }
+
+        auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        while (true) {
+            int sock = socket(AF_INET, SOCK_STREAM, 0);
+            if (sock < 0) throw std::runtime_error("Falha ao abrir o canal de envio.");
+            if (connect(sock, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) >= 0) return sock;
+            CLOSE_SOCK(sock);
+            if (std::chrono::steady_clock::now() >= deadline)
+                throw std::runtime_error("Nao foi possivel conectar ao canal de comunicacao.");
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
-        if (!connected) {
-            CLOSE_SOCK(sock);
-            throw std::runtime_error("Nao foi possivel conectar ao canal de comunicacao.");
-        }
-        return sock;
     }
 
     static void sendAll(int sock, const std::string& msg) {
