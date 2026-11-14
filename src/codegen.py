@@ -14,9 +14,11 @@ from ast_nodes import (
     ForkExpr, JoinExpr
 )
 from cpp_template import _CPP_HEADER
+from interfaces import I_GeradorCPP
 
 
-class CppCodeGenerator:
+class CppCodeGenerator(I_GeradorCPP):
+    """Componente Gerador de Codigo C++: realiza a interface I_GeradorCPP."""
     @staticmethod
     def _escape_string(value: str) -> str:
         res = []

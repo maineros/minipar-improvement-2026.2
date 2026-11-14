@@ -1,6 +1,7 @@
 from __future__ import annotations
 import os
 from typing import Optional
+from interfaces import I_GeradorTAC
 from ast_nodes import (
     ASTNode, Program, VarDecl, Assignment, PrintStmt, SeqBlock, ParBlock, BinaryExpr,
     UnaryExpr, NumberExpr, StringExpr, BoolExpr, IdentifierExpr, IfStmt, WhileStmt,
@@ -10,7 +11,8 @@ from ast_nodes import (
 )
 
 
-class TACGenerator:
+class TACGenerator(I_GeradorTAC):
+    """Componente Gerador de Codigo de Tres Enderecos: realiza a interface I_GeradorTAC."""
     def __init__(self) -> None:
         self.lines: list[str] = []
         self.temp_count = 0

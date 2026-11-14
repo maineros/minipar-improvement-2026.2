@@ -2,6 +2,7 @@ from __future__ import annotations
 import sys
 from typing import List
 from lexer import Token, TokenType
+from interfaces import I_Sintatico
 from ast_nodes import (
     ASTNode, Program, VarDecl, Assignment, PrintStmt, SeqBlock, ParBlock, 
     BinaryExpr, UnaryExpr, NumberExpr, StringExpr, BoolExpr, IdentifierExpr, IfStmt, WhileStmt,
@@ -10,7 +11,8 @@ from ast_nodes import (
     CChannelExpr, SendStmt, ReceiveExpr, ListLiteral, MatrixCreateExpr, IndexExpr, IndexAssign, ForkExpr, JoinExpr
 )
 
-class Parser:
+class Parser(I_Sintatico):
+    """Componente Analisador Sintatico: realiza a interface I_Sintatico."""
     def __init__(self, tokens: List[Token]) -> None:
         self._tokens = tokens
         self._pos = 0

@@ -4,6 +4,7 @@ import subprocess
 import glob
 
 from main import compile_file
+from interfaces import I_Interface_Usuario
 from run_artifacts import create_run_dir, executable_path
 from program_analyzer import get_program_spec
 from test_orchestrator import (
@@ -158,7 +159,7 @@ def exibir_menu():
 
     while True:
         print("\n" + "=" * 45)
-        print(" Menu de Testes - Compilador MiniPar 2026.1")
+        print(" Menu de Testes - Compilador MiniPar 2026.2")
         print("=" * 45)
         print("1 - Rodar todos os testes automaticamente")
         print("2 - Escolher 1 teste para rodar")
@@ -178,5 +179,15 @@ def exibir_menu():
             print("Opcao invalida. Tente novamente.")
 
 
+class MenuCLI(I_Interface_Usuario):
+    """Componente Menu_CLI: interface de terminal, realiza I_Interface_Usuario."""
+
+    def iniciar_interacao(self) -> None:
+        exibir_menu()
+
+    def exibir_resultados(self, texto: str) -> None:
+        print(texto)
+
+
 if __name__ == "__main__":
-    exibir_menu()
+    MenuCLI().iniciar_interacao()

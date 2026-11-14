@@ -6,6 +6,9 @@ import glob
 import json
 from pathlib import Path
 import web_execution
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src'))
+from interfaces import I_Interface_Usuario
 from run_artifacts import create_run_dir, executable_path
 
 from test_orchestrator import (
@@ -499,6 +502,25 @@ def compile_code():
         session.cancel("Não foi possível concluir a execução do programa.")
         return jsonify({"error": str(e), "success": False}), 500
 
+class IDEWebApp(I_Interface_Usuario):
+    """Componente IDE_Web_App: interface web (Flask), realiza I_Interface_Usuario.
+
+    As duas interfaces web (a didatica em / e a 2026.1 em /legacy) sao servidas
+    pelo mesmo app Flask; a compilacao passa pelo componente orquestrador
+    (main.py e analysis_worker.py).
+    """
+
+    def __init__(self, host: str = "127.0.0.1", port: int = 5000) -> None:
+        self.host = host
+        self.port = port
+
+    def iniciar_interacao(self) -> None:
+        app.run(host=self.host, port=self.port, debug=False)
+
+    def exibir_resultados(self, texto: str) -> None:
+        print(texto)
+
+
 if __name__ == '__main__':
     # Roda a IDE silenciosamente
-    app.run(debug=False, port=5000)
+    IDEWebApp().iniciar_interacao()
