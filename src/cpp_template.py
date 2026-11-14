@@ -15,17 +15,20 @@ _CPP_HEADER = """\
 #include <future>
 #include <mutex>
 #include <deque>
+#include <iomanip>
 
 #ifdef _WIN32
   #include <winsock2.h>
   #include <ws2tcpip.h>
   #pragma comment(lib, "ws2_32.lib")
   #define CLOSE_SOCK closesocket
+  #define SHUT_SEND SD_SEND
 #else
   #include <sys/socket.h>
   #include <arpa/inet.h>
   #include <unistd.h>
   #define CLOSE_SOCK close
+  #define SHUT_SEND SHUT_WR
 #endif
 
 // ===== fork / join =====
@@ -219,6 +222,26 @@ public:
     }
 
     void sendData(std::string msg) {
+        int sock = connectSocket();
+        sendAll(sock, msg);
+        // Closing the sending connection frames one complete message, as in
+        // the original channel protocol, including an empty string.
+        CLOSE_SOCK(sock);
+    }
+
+    // Pedido e resposta na mesma conexao (usado pelo fork remoto, MINIP-30):
+    // manda a mensagem, avisa que terminou de mandar e le a resposta ate o outro lado fechar.
+    std::string request(const std::string& msg) {
+        int sock = connectSocket();
+        sendAll(sock, msg);
+        shutdown(sock, SHUT_SEND);
+        std::string result = readAll(sock);
+        CLOSE_SOCK(sock);
+        return result;
+    }
+
+private:
+    int connectSocket() {
         int sock = socket(AF_INET, SOCK_STREAM, 0);
         if (sock < 0) throw std::runtime_error("Falha ao abrir o canal de envio.");
         struct sockaddr_in serv_addr;
@@ -238,6 +261,10 @@ public:
             CLOSE_SOCK(sock);
             throw std::runtime_error("Nao foi possivel conectar ao canal de comunicacao.");
         }
+        return sock;
+    }
+
+    static void sendAll(int sock, const std::string& msg) {
         size_t offset = 0;
         while (offset < msg.size()) {
             int count = send(sock, msg.data() + offset,
@@ -248,9 +275,21 @@ public:
             }
             offset += count;
         }
-        // Closing the sending connection frames one complete message, as in
-        // the original channel protocol, including an empty string.
-        CLOSE_SOCK(sock);
+    }
+
+public:
+    static std::string readAll(int sock) {
+        char buffer[4096];
+        std::string result;
+        int count;
+        while ((count = recv(sock, buffer, sizeof(buffer), 0)) > 0) {
+            result.append(buffer, count);
+        }
+        if (count < 0) {
+            CLOSE_SOCK(sock);
+            throw std::runtime_error("Falha ao receber a mensagem completa pelo canal.");
+        }
+        return result;
     }
 
     std::string receiveData() {
@@ -291,5 +330,113 @@ public:
         return result;
     }
 };
+
+
+// ===== fork remoto: fork f(x) on canal (MINIP-30) =====
+// O outro computador roda o MESMO programa com --worker PORTA. O fork manda pelo
+// canal uma linha de texto com o nome da funcao e os argumentos (numeros):
+//     MINIPAR-FORK <id do programa> <funcao> <qtd> <arg1> <arg2> ...
+// e o worker responde "OK <resultado>" ou "ERR <mensagem>".
+// O id do programa garante que os dois lados compilaram o mesmo codigo.
+// __remote_dispatch e gerado pelo compilador, depois das funcoes do programa.
+extern const char* __MINIPAR_PROGRAM_ID;
+double __remote_dispatch(const std::string& name, const std::vector<double>& args);
+
+inline std::string __fmt_number(double v) {
+    std::ostringstream out;
+    out << std::setprecision(17) << v;
+    return out.str();
+}
+
+inline double __fork_remote(std::shared_ptr<MiniParChannel> ch, std::string name, std::vector<double> args) {
+    auto fut = std::async(std::launch::async, [ch, name, args]() -> double {
+        std::string where = ch->ip + ":" + std::to_string(ch->port);
+        std::string req = std::string("MINIPAR-FORK ") + __MINIPAR_PROGRAM_ID + " " + name + " " + std::to_string(args.size());
+        for (double a : args) req += " " + __fmt_number(a);
+        req += "\\n";
+        std::string resp;
+        try {
+            resp = ch->request(req);
+        } catch (const std::exception& e) {
+            throw std::runtime_error("fork remoto em " + where + ": " + e.what() + " (o worker esta rodando?)");
+        }
+        std::istringstream in(resp);
+        std::string status;
+        in >> status;
+        if (status == "OK") {
+            double v = 0;
+            if (in >> v) return v;
+        }
+        std::string rest;
+        std::getline(in, rest);
+        if (!rest.empty() && rest[0] == ' ') rest.erase(0, 1);
+        if (status == "ERR") throw std::runtime_error("o worker em " + where + " respondeu: " + rest);
+        throw std::runtime_error("resposta invalida do worker em " + where);
+    }).share();
+    std::lock_guard<std::mutex> lock(__tasks_mtx);
+    __tasks.push_back(fut);
+    return static_cast<double>(__tasks.size() - 1);
+}
+
+// Responde um pedido de fork remoto (uma linha) e devolve o texto da resposta.
+inline std::string __worker_answer(const std::string& line, std::string& log) {
+    std::istringstream in(line);
+    std::string magic, id, name;
+    size_t count = 0;
+    if (!(in >> magic >> id >> name >> count) || magic != "MINIPAR-FORK")
+        return "ERR pedido invalido";
+    if (id != __MINIPAR_PROGRAM_ID)
+        return "ERR programa diferente (compile o mesmo .minipar nos dois computadores)";
+    std::vector<double> args;
+    for (size_t i = 0; i < count; ++i) {
+        double v;
+        if (!(in >> v)) return "ERR argumentos invalidos";
+        args.push_back(v);
+    }
+    log = name + "(";
+    for (size_t i = 0; i < args.size(); ++i) log += (i ? ", " : "") + __fmt_number(args[i]);
+    log += ")";
+    try {
+        return "OK " + __fmt_number(__remote_dispatch(name, args));
+    } catch (const std::exception& e) {
+        return std::string("ERR ") + e.what();
+    }
+}
+
+// Modo worker: ./programa --worker PORTA
+// Fica esperando pedidos; cada pedido roda numa thread propria (varios em paralelo).
+inline int __worker_main(int port) {
+    int listener = socket(AF_INET, SOCK_STREAM, 0);
+    if (listener < 0) { std::cerr << "[ERRO WORKER] Falha ao abrir o socket." << std::endl; return 1; }
+    int opt = 1;
+    setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, (const char*)&opt, sizeof(opt));
+    struct sockaddr_in address;
+    std::memset(&address, 0, sizeof(address));
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = INADDR_ANY;
+    address.sin_port = htons(port);
+    if (bind(listener, (struct sockaddr*)&address, sizeof(address)) < 0 || listen(listener, SOMAXCONN) < 0) {
+        std::cerr << "[ERRO WORKER] Nao foi possivel escutar na porta " << port << "." << std::endl;
+        CLOSE_SOCK(listener);
+        return 1;
+    }
+    static std::mutex log_mtx;
+    std::cout << "[WORKER] Esperando tarefas na porta " << port << " (programa " << __MINIPAR_PROGRAM_ID << ")" << std::endl;
+    while (true) {
+        int client = accept(listener, nullptr, nullptr);
+        if (client < 0) continue;
+        std::thread([client]() {
+            std::string line, log, answer;
+            char c;
+            while (recv(client, &c, 1, 0) == 1 && c != '\\n') line += c;
+            answer = __worker_answer(line, log);
+            std::string reply = answer + "\\n";
+            send(client, reply.data(), static_cast<int>(reply.size()), 0);
+            CLOSE_SOCK(client);
+            std::lock_guard<std::mutex> lock(log_mtx);
+            std::cout << "[WORKER] " << (log.empty() ? std::string("pedido") : log) << " -> " << answer << std::endl;
+        }).detach();
+    }
+}
 
 """

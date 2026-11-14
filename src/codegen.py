@@ -1,4 +1,6 @@
 from __future__ import annotations
+import dataclasses
+import hashlib
 import os
 import subprocess
 import sys
@@ -102,8 +104,13 @@ class CppCodeGenerator:
         # fork f(x): roda a chamada numa thread propria e devolve o numero da tarefa.
         # [=] copia os valores atuais (ex.: o i do laco), entao cada tarefa recebe o seu.
         # mutable deixa a tarefa mexer na propria copia (ex.: xs.pop() dentro do fork).
-        # fork f(x) on canal: neste passo a tarefa ainda roda neste computador
-        # (o envio pela rede entra no passo 3 do MINIP-30).
+        # fork f(x) on canal: a tarefa roda no computador do canal (worker).
+        # Os argumentos sao calculados aqui e vao pela rede como numeros.
+        if isinstance(node, ForkExpr) and node.destination is not None:
+            call = node.function_call
+            dest = self._translate_expression(node.destination)
+            args = ", ".join(f"static_cast<double>({self._translate_expression(a)})" for a in call.arguments)
+            return f'__fork_remote({dest}, "{call.name}", std::vector<double>{{{args}}})'
         if isinstance(node, ForkExpr):
             call = self._translate_expression(node.function_call)
             return f"__fork([=]() mutable {{ return {call}; }})"
@@ -278,6 +285,30 @@ class CppCodeGenerator:
             return f"{self._translate_expression(node.target)} = {self._translate_expression(node.value)}"
         return self._translate_expression(node)
 
+    @staticmethod
+    def _remote_functions(node, found: dict) -> dict:
+        """Acha as funcoes usadas em 'fork ... on' (nome -> quantidade de argumentos)."""
+        if isinstance(node, list):
+            for item in node: CppCodeGenerator._remote_functions(item, found)
+        elif isinstance(node, ASTNode):
+            if isinstance(node, ForkExpr) and node.destination is not None and isinstance(node.function_call, FuncCallExpr):
+                found.setdefault(node.function_call.name, set()).add(len(node.function_call.arguments))
+            for f in dataclasses.fields(node):
+                CppCodeGenerator._remote_functions(getattr(node, f.name), found)
+        return found
+
+    def _remote_dispatch(self, program: Program) -> str:
+        """Gera a funcao que o worker usa para achar a tarefa pedida pelo nome.
+        So entram as funcoes usadas em 'fork ... on' (as outras podem receber listas
+        ou objetos, que nao vao pela rede)."""
+        code = "double __remote_dispatch(const std::string& name, const std::vector<double>& args) {\n"
+        for name, counts in sorted(self._remote_functions(program.statements, {}).items()):
+            for n in sorted(counts):
+                call_args = ", ".join(f"args[{i}]" for i in range(n))
+                code += f'    if (name == "{name}" && args.size() == {n}) return __as_double([&]() {{ return {name}({call_args}); }});\n'
+        code += '    throw std::runtime_error("a funcao \'" + name + "\' nao pode rodar neste worker");\n}\n\n'
+        return code
+
     def generate_text(self, program: Program) -> str:
         """Translate an AST to C++ without writing files or invoking a compiler."""
         cpp_code = _CPP_HEADER
@@ -309,13 +340,21 @@ class CppCodeGenerator:
                 else: cpp_code += self._translate_statement(node.body, "    ")
                 cpp_code += "}\n\n"
 
-        cpp_code += "int main() {\n    #ifdef _WIN32\n        WSADATA wsa;\n        WSAStartup(MAKEWORD(2,2), &wsa);\n    #endif\n\n"
+        cpp_code += self._remote_dispatch(program)
+        cpp_code += "int main(int argc, char** argv) {\n    #ifdef _WIN32\n        WSADATA wsa;\n        WSAStartup(MAKEWORD(2,2), &wsa);\n    #endif\n"
+        # ./programa --worker PORTA: espera tarefas de outro computador (fork ... on canal)
+        cpp_code += '    if (argc >= 3 && std::string(argv[1]) == "--worker") return __worker_main(std::atoi(argv[2]));\n\n'
         for node in program.statements:
             if not isinstance(node, (ClassDecl, FuncDecl)):
                 if isinstance(node, SeqBlock):
                     for stmt in node.statements: cpp_code += self._translate_statement(stmt, "    ")
                 else: cpp_code += self._translate_statement(node, "    ")
         cpp_code += "\n    return 0;\n}\n"
+        # Id do programa: resumo do codigo gerado. Os dois computadores precisam ter o
+        # mesmo id para trocar tarefas (garante que compilaram o mesmo .minipar).
+        program_id = hashlib.sha1(cpp_code.encode("utf-8")).hexdigest()[:12]
+        header_end = len(_CPP_HEADER)
+        cpp_code = cpp_code[:header_end] + f'const char* __MINIPAR_PROGRAM_ID = "{program_id}";\n\n' + cpp_code[header_end:]
         return cpp_code
 
     def generate(self, program: Program, output_name: str, output_dir: str = "output") -> bool:
