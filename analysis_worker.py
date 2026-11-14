@@ -11,11 +11,17 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
-from codegen import CppCodeGenerator
-from lexer import Lexer, TokenType
-from parser import Parser
-from semantic import SemanticAnalyzer
-from tac import TACGenerator
+from lexer import TokenType
+from orquestrador import MainCompiler
+# Nomes dos componentes concretos mantidos aqui so para os testes que os importam deste modulo.
+from codegen import CppCodeGenerator  # noqa: F401
+from lexer import Lexer  # noqa: F401
+from parser import Parser  # noqa: F401
+from semantic import SemanticAnalyzer  # noqa: F401
+from tac import TACGenerator  # noqa: F401
+
+# Cada fase e pedida ao componente orquestrador, que entrega o componente pela interface.
+COMPILADOR = MainCompiler()
 
 PHASES = ("tokens", "ast", "semantic", "tac", "cpp")
 
@@ -71,7 +77,7 @@ def analyze(code: str, phase: str):
     stdout, stderr = io.StringIO(), io.StringIO()
     with redirect_stdout(stdout), redirect_stderr(stderr):
         try:
-            lexer = Lexer(code)
+            lexer = COMPILADOR.lexico(code)
             tokens = lexer.tokenize()
             token_result = {"tokens": [
                 {"type": token.type.name, "lexeme": token.lexeme,
@@ -92,13 +98,13 @@ def analyze(code: str, phase: str):
                 return response(phase, token_result)
 
             current_phase = "ast"
-            parser = Parser(tokens)
+            parser = COMPILADOR.sintatico(tokens)
             program = parser.parse()
             if phase == "ast":
                 return response(phase, serialize_ast(program))
 
             current_phase = "semantic"
-            if not SemanticAnalyzer().analyze(program):
+            if not COMPILADOR.semantico().analyze(program):
                 errors = captured_diagnostics(current_phase, stderr.getvalue())
                 return response(phase, diagnostics=errors, failed_phase=current_phase)
             if phase == "semantic":
@@ -107,9 +113,9 @@ def analyze(code: str, phase: str):
 
             current_phase = phase
             if phase == "tac":
-                return response(phase, TACGenerator().generate_text(program))
+                return response(phase, COMPILADOR.gerador_tac().generate_text(program))
 
-            return response(phase, CppCodeGenerator().generate_text(program))
+            return response(phase, COMPILADOR.gerador_cpp().generate_text(program))
         except SystemExit:
             errors = captured_diagnostics(current_phase, stderr.getvalue(),
                                           parser if current_phase == "ast" else None)

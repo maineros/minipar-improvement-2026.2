@@ -1,7 +1,6 @@
 from __future__ import annotations
 import sys
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import List, Optional
 from ast_nodes import (
     ASTNode, Program, VarDecl, Assignment, PrintStmt, IdentifierExpr, BinaryExpr,
     UnaryExpr, NumberExpr, StringExpr, BoolExpr, SeqBlock, ParBlock, IfStmt, WhileStmt,
@@ -10,47 +9,41 @@ from ast_nodes import (
     CChannelExpr, SendStmt, ReceiveExpr, ListLiteral, MatrixCreateExpr, IndexExpr, IndexAssign, ForkExpr, JoinExpr
 )
 
-@dataclass
-class Symbol:
-    name: str
-    type: str
-    params: List[str] = field(default_factory=list)
-    attributes: Dict[str, str] = field(default_factory=dict)
-    methods: Dict[str, List[str]] = field(default_factory=dict)
+from interfaces import I_Semantico, I_TabelaSimbolos
+from symbol_table import Symbol, TabelaSimbolos  # Symbol reexportado por compatibilidade
 
-class SemanticAnalyzer:
+
+class SemanticAnalyzer(I_Semantico):
+    """Componente Analisador Semantico: realiza a interface I_Semantico.
+
+    Usa o componente Tabela de Simbolos somente pela interface I_TabelaSimbolos.
+    """
     # Funcoes que ja vem com a linguagem (nao precisam de func).
     BUILTINS = ("exp", "random", "range", "len", "to_number", "parse_ints", "to_string", "substr")
     # Quantos argumentos as funcoes de texto pedem.
     BUILTIN_ARITY = {"to_string": 1, "substr": 3}
 
-    def __init__(self) -> None:
-        self._scopes: List[Dict[str, Symbol]] = []
+    def __init__(self, tabela: Optional[I_TabelaSimbolos] = None) -> None:
+        # Atributo de tipo interface; o componente concreto pode ser trocado.
+        self.tabela: I_TabelaSimbolos = tabela if tabela is not None else TabelaSimbolos()
         self._has_errors = False
         self._current_function: Optional[str] = None
         self._current_class: Optional[str] = None
-        self._classes: Dict[str, Symbol] = {}
-        self._functions: Dict[str, Symbol] = {}
         self._loop_depth = 0
-        self._enter_scope()
 
-    def _enter_scope(self) -> None: self._scopes.append({})
-    def _exit_scope(self) -> None:
-        if len(self._scopes) > 1: self._scopes.pop()
+    def _enter_scope(self) -> None: self.tabela.entrar_escopo()
+    def _exit_scope(self) -> None: self.tabela.sair_escopo()
 
     def _get_context(self) -> str:
         return f" (Funcao: {self._current_function})" if self._current_function else ""
 
     def _define_symbol(self, name: str, type_: str, line: int, params: Optional[List[str]] = None) -> None:
-        if name in self._scopes[-1]:
+        if not self.tabela.definir(Symbol(name=name, type=type_, params=params or [])):
             print(f"[ERRO SEMANTICO] Linha {line}{self._get_context()}: Variavel '{name}' ja declarada.", file=sys.stderr)
             self._has_errors = True
-        else: self._scopes[-1][name] = Symbol(name=name, type=type_, params=params or [])
 
     def _lookup(self, name: str) -> Optional[Symbol]:
-        for scope in reversed(self._scopes):
-            if name in scope: return scope[name]
-        return None
+        return self.tabela.buscar(name)
 
     # Codigos dos erros de fork/join (MINIP-30). Aparecem na mensagem como [SEM_FJ_01].
     SEM_FJ_FORK_SEM_CHAMADA = "SEM_FJ_01"  # fork precisa de uma chamada: fork f(x)
@@ -90,7 +83,7 @@ class SemanticAnalyzer:
             return "number"
         if isinstance(node, PropertyAccess):
             obj_type = self._infer_type(node.object)
-            cls = self._classes.get(obj_type)
+            cls = self.tabela.buscar_classe(obj_type)
             if cls and node.property_name in cls.attributes: return cls.attributes[node.property_name]
             return "unknown"
         if isinstance(node, MethodCall):
@@ -122,11 +115,11 @@ class SemanticAnalyzer:
     def _collect_declarations(self, program: Program) -> None:
         for stmt in program.statements:
             if isinstance(stmt, FuncDecl):
-                self._functions[stmt.name] = Symbol(stmt.name, "FUNC", params=stmt.params)
+                self.tabela.registrar_funcao(Symbol(stmt.name, "FUNC", params=stmt.params))
             elif isinstance(stmt, ClassDecl):
                 attrs = {a.name: a.type for a in stmt.attributes}
                 methods = {m.name: m.params for m in stmt.methods}
-                self._classes[stmt.name] = Symbol(stmt.name, "CLASS", attributes=attrs, methods=methods)
+                self.tabela.registrar_classe(Symbol(stmt.name, "CLASS", attributes=attrs, methods=methods))
 
     def validate_node(self, node: ASTNode) -> None:
         if node is None: return
@@ -217,7 +210,7 @@ class SemanticAnalyzer:
             if self._loop_depth == 0:
                 self._report(node.line, f"'{node.__class__.__name__.replace('Stmt', '').lower()}' usado fora de laco.")
         elif isinstance(node, ClassDecl):
-            if node.superclass and node.superclass not in self._classes:
+            if node.superclass and self.tabela.buscar_classe(node.superclass) is None:
                 self._report(node.line, f"Superclasse '{node.superclass}' nao declarada.")
             self._define_symbol(node.name, "CLASS", node.line)
             self._enter_scope()
@@ -240,7 +233,7 @@ class SemanticAnalyzer:
             if node.value: self.validate_node(node.value)
         elif isinstance(node, MethodCall):
             obj_type = self._infer_type(node.object)
-            cls = self._classes.get(obj_type)
+            cls = self.tabela.buscar_classe(obj_type)
             if cls and node.method_name not in cls.methods:
                 self._report(node.line, f"Metodo '{node.method_name}' nao declarado em '{obj_type}'.")
             elif cls and len(cls.methods[node.method_name]) != len(node.arguments):
@@ -248,28 +241,28 @@ class SemanticAnalyzer:
             self.validate_node(node.object)
             for arg in node.arguments: self.validate_node(arg)
         elif isinstance(node, FuncCallExpr):
-            if node.name not in self._functions and node.name not in self.BUILTINS:
+            if self.tabela.buscar_funcao(node.name) is None and node.name not in self.BUILTINS:
                 self._report(node.line, f"Funcao '{node.name}' nao declarada.")
-            elif node.name not in self._functions and node.name in self.BUILTIN_ARITY and len(node.arguments) != self.BUILTIN_ARITY[node.name]:
+            elif self.tabela.buscar_funcao(node.name) is None and node.name in self.BUILTIN_ARITY and len(node.arguments) != self.BUILTIN_ARITY[node.name]:
                 self._report(node.line, f"Funcao '{node.name}' espera {self.BUILTIN_ARITY[node.name]} argumento(s), recebeu {len(node.arguments)}.")
-            elif node.name in self._functions and len(self._functions[node.name].params) != len(node.arguments):
-                self._report(node.line, f"Funcao '{node.name}' espera {len(self._functions[node.name].params)} argumento(s), recebeu {len(node.arguments)}.")
+            elif self.tabela.buscar_funcao(node.name) is not None and len(self.tabela.buscar_funcao(node.name).params) != len(node.arguments):
+                self._report(node.line, f"Funcao '{node.name}' espera {len(self.tabela.buscar_funcao(node.name).params)} argumento(s), recebeu {len(node.arguments)}.")
             for arg in node.arguments: self.validate_node(arg)
         elif isinstance(node, PropertyAccess):
             self.validate_node(node.object)
             obj_type = self._infer_type(node.object)
-            cls = self._classes.get(obj_type)
+            cls = self.tabela.buscar_classe(obj_type)
             if cls and node.property_name not in cls.attributes:
                 self._report(node.line, f"Atributo '{node.property_name}' nao declarado em '{obj_type}'.")
         elif isinstance(node, PropertyAssign):
             self.validate_node(node.object)
             self.validate_node(node.value)
             obj_type = self._infer_type(node.object)
-            cls = self._classes.get(obj_type)
+            cls = self.tabela.buscar_classe(obj_type)
             if cls and node.property_name not in cls.attributes:
                 self._report(node.line, f"Atributo '{node.property_name}' nao declarado em '{obj_type}'.")
         elif isinstance(node, NewExpr):
-            if node.class_name not in self._classes:
+            if self.tabela.buscar_classe(node.class_name) is None:
                 self._report(node.line, f"Classe '{node.class_name}' nao declarada.")
             for arg in node.arguments: self.validate_node(arg)
         elif isinstance(node, ThisExpr):
@@ -303,7 +296,7 @@ class SemanticAnalyzer:
         call = node.function_call
         # O outro computador roda o mesmo programa e acha a tarefa pelo nome da funcao.
         # Metodo de objeto ou funcao pronta (len, substr...) nao tem como ir pela rede.
-        if not isinstance(call, FuncCallExpr) or call.name not in self._functions:
+        if not isinstance(call, FuncCallExpr) or self.tabela.buscar_funcao(call.name) is None:
             self._report(node.line, "O 'fork ... on' so pode chamar uma funcao declarada com 'func' (nao metodo nem funcao pronta).", code=self.SEM_FJ_REMOTO_FUNCAO)
             return
         # Pela rede vao so numeros (o join tambem so devolve numero).

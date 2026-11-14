@@ -14,9 +14,11 @@ from ast_nodes import (
     ForkExpr, JoinExpr
 )
 from cpp_template import _CPP_HEADER
+from interfaces import I_GeradorCPP
 
 
-class CppCodeGenerator:
+class CppCodeGenerator(I_GeradorCPP):
+    """Componente Gerador de Codigo C++: realiza a interface I_GeradorCPP."""
     @staticmethod
     def _escape_string(value: str) -> str:
         res = []
@@ -67,7 +69,7 @@ class CppCodeGenerator:
             if node.name == "range":
                 return f"__minipar_range({args})"
             if node.name == "to_number":
-                return f"std::stod({args})"
+                return f"__to_number({args})"
             if node.name == "parse_ints":
                 return f"__parse_ints({args})"
             if node.name == "to_string":
@@ -342,6 +344,7 @@ class CppCodeGenerator:
 
         cpp_code += self._remote_dispatch(program)
         cpp_code += "int main(int argc, char** argv) {\n    #ifdef _WIN32\n        WSADATA wsa;\n        WSAStartup(MAKEWORD(2,2), &wsa);\n    #endif\n"
+        cpp_code += "    std::set_terminate(__minipar_terminate);\n"
         # ./programa --worker PORTA: espera tarefas de outro computador (fork ... on canal)
         cpp_code += '    if (argc >= 3 && std::string(argv[1]) == "--worker") return __worker_main(std::atoi(argv[2]));\n\n'
         for node in program.statements:

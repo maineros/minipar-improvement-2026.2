@@ -3,6 +3,11 @@ from dataclasses import dataclass
 from enum import Enum, auto
 from typing import List
 
+try:
+    from interfaces import I_Lexico
+except ImportError:  # importado como src.lexer (web_execution.py)
+    from src.interfaces import I_Lexico
+
 class TokenType(Enum):
     IDENTIFIER     = auto()
     NUMBER         = auto()
@@ -117,7 +122,8 @@ class LexicalError:
     def __str__(self) -> str:
         return f"[ERRO LEXICO] Linha {self.line}, col {self.col}: {self.message}"
 
-class Lexer:
+class Lexer(I_Lexico):
+    """Componente Analisador Lexico: realiza a interface I_Lexico."""
     def __init__(self, source_code: str) -> None:
         self._source = source_code
         self._pos = 0

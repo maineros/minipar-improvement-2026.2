@@ -1,3 +1,7 @@
+# Teste 1: calculadora cliente-servidor (os dois lados no mesmo programa, localhost).
+# Para rodar em dois computadores, use tests/distribuido/teste1_servidor_calculadora.minipar
+# e tests/distribuido/teste1_cliente_calculadora.minipar (roteiro em
+# docs/ROTEIRO_TESTE1_DOIS_COMPUTADORES.md).
 # Calcula operação aritmética recebida como string (ex.: "+", "-", "*", "/")
 func calcular(op, v1, v2) {
     if (op == "+") {
