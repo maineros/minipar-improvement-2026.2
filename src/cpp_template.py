@@ -106,12 +106,46 @@ std::string input(const std::string& prompt) {
     return input();
 }
 
-// Converte linha com inteiros separados por espaco em vetor (ex.: "10 -3 80")
+// to_number(s): converte texto em numero. Entrada vazia ou invalida (ex.: "abc",
+// "12x") encerra o programa com uma mensagem clara, em vez de abortar com
+// std::invalid_argument do std::stod.
+inline double __to_number(const std::string& s) {
+    size_t ini = s.find_first_not_of(" \\t\\r\\n");
+    size_t fim = s.find_last_not_of(" \\t\\r\\n");
+    if (ini == std::string::npos) {
+        __fail_now("to_number recebeu um texto vazio; era esperado um numero.");
+    }
+    std::string limpo = s.substr(ini, fim - ini + 1);
+    size_t usados = 0;
+    double valor = 0;
+    try {
+        valor = std::stod(limpo, &usados);
+    } catch (const std::exception&) {
+        __fail_now("valor invalido para to_number: '" + limpo + "' (era esperado um numero).");
+    }
+    if (usados != limpo.size()) {
+        __fail_now("valor invalido para to_number: '" + limpo + "' (era esperado um numero).");
+    }
+    return valor;
+}
+
+// Converte linha com inteiros separados por espaco em vetor (ex.: "10 -3 80").
+// Um pedaco que nao e numero (ex.: "10 abc 5") encerra o programa com mensagem clara.
 std::vector<double> __parse_ints(const std::string& s) {
     std::vector<double> result;
     std::istringstream iss(s);
-    double n;
-    while (iss >> n) {
+    std::string pedaco;
+    while (iss >> pedaco) {
+        size_t usados = 0;
+        double n = 0;
+        try {
+            n = std::stod(pedaco, &usados);
+        } catch (const std::exception&) {
+            usados = 0;
+        }
+        if (usados != pedaco.size()) {
+            __fail_now("parse_ints encontrou '" + pedaco + "'; insira apenas numeros separados por espaco.");
+        }
         result.push_back(n);
     }
     return result;

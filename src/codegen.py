@@ -69,7 +69,7 @@ class CppCodeGenerator(I_GeradorCPP):
             if node.name == "range":
                 return f"__minipar_range({args})"
             if node.name == "to_number":
-                return f"std::stod({args})"
+                return f"__to_number({args})"
             if node.name == "parse_ints":
                 return f"__parse_ints({args})"
             if node.name == "to_string":
