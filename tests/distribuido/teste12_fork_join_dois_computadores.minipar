@@ -1,0 +1,58 @@
+# Teste 12: fork/join distribuído entre dois computadores (MINIP-30)
+#
+# A soma 1^2 + 2^2 + ... + 40000^2 é dividida em 4 partes.
+# Duas partes rodam neste computador (fork normal) e duas rodam no outro
+# computador (fork ... on canal). O join junta os 4 resultados.
+#
+# Como rodar (o mesmo executável nos dois computadores):
+#   Computador 2 (worker):       ./teste12_fork_join_dois_computadores --worker 7000
+#   Computador 1 (coordenador):  ./teste12_fork_join_dois_computadores
+#                                e digite o IP do computador 2 (ou 127.0.0.1 para testar sozinho)
+
+func soma_quadrados(inicio, fim) {
+    var s = 0.0;
+    var i = inicio;
+    while (i <= fim) {
+        s = s + i * i;
+        i = i + 1;
+    }
+    return s;
+}
+
+seq {
+    var ip = input("IP do computador worker: ");
+    var porta = 7000;
+    var outro_computador = c_channel(ip, porta);
+
+    print("=== Teste 12: fork/join entre dois computadores ===");
+    print("Worker em:", ip, porta);
+
+    # Versão sequencial, para conferir o resultado
+    var esperado = soma_quadrados(1, 40000);
+
+    # Duas tarefas aqui e duas no outro computador
+    var t1 = fork soma_quadrados(1, 10000);
+    var t2 = fork soma_quadrados(10001, 20000);
+    var t3 = fork soma_quadrados(20001, 30000) on outro_computador;
+    var t4 = fork soma_quadrados(30001, 40000) on outro_computador;
+
+    # join(t, ms): espera no máximo 10 segundos por cada tarefa
+    var p1 = join(t1);
+    var p2 = join(t2);
+    var p3 = join(t3, 10000);
+    var p4 = join(t4, 10000);
+
+    print("Parte 1 (aqui):", p1);
+    print("Parte 2 (aqui):", p2);
+    print("Parte 3 (outro computador):", p3);
+    print("Parte 4 (outro computador):", p4);
+
+    var total = p1 + p2 + p3 + p4;
+    print("Total distribuido:", total);
+    print("Total sequencial :", esperado);
+    if (total == esperado) {
+        print("RESULTADO: OK, os dois totais batem.");
+    } else {
+        print("RESULTADO: ERRO, os totais sao diferentes.");
+    }
+}
