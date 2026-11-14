@@ -1,6 +1,7 @@
-"""MINIP-30: fork f(x) on canal e join(t, ms).
+"""MINIP-30: fork f(x) on canal, join(t, ms) e o modo worker (--worker PORTA).
 
-Neste passo o fork com "on" ainda roda neste computador; a rede entra no passo 3.
+Os testes de rede rodam os dois lados no mesmo computador (127.0.0.1),
+como o enunciado pede antes do teste em dois computadores.
 """
 import contextlib
 import io
@@ -90,6 +91,12 @@ class SintaxeESemanticaTests(unittest.TestCase):
         self.assertIn("spawn quadrado, 1 on canal", tac)
         self.assertRegex(tac, r"= join t\d+, 5000")
 
+    def test_cpp_tem_worker_e_so_despacha_funcoes_remotas(self):
+        cpp = CppCodeGenerator().generate_text(parse(PROGRAMA.replace("PORTA", "7000")))
+        self.assertIn('__fork_remote(canal, "quadrado"', cpp)
+        self.assertIn('if (name == "soma" && args.size() == 2)', cpp)
+        self.assertIn('"--worker"', cpp)
+        self.assertNotIn('name == "outra"', cpp)
 
 
 @unittest.skipIf(shutil.which("g++") is None, "g++ nao encontrado")
@@ -125,11 +132,26 @@ class ExecucaoDistribuidaTests(unittest.TestCase):
         self.assertIn("Esperando tarefas", w.stdout.readline())
         return w
 
-    def test_fork_on_ainda_roda_neste_computador(self):
-        exe = self.compilar(PROGRAMA.replace("PORTA", "7000"), "programa")
+    def test_tarefas_rodam_no_worker_e_o_join_recebe_o_resultado(self):
+        porta = porta_livre()
+        exe = self.compilar(PROGRAMA.replace("PORTA", str(porta)), "programa")
+        worker = self.iniciar_worker(exe, porta)
         run = subprocess.run([exe], capture_output=True, text=True, timeout=30)
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertEqual(run.stdout.split(), ["25", "49", "6.5"])
+        worker.kill()
+        log = worker.communicate()[0]
+        self.assertIn("quadrado(7) -> OK 49", log)
+        self.assertIn("soma(2.5, 4) -> OK 6.5", log)
+
+    def test_worker_recusa_programa_diferente(self):
+        porta = porta_livre()
+        coordenador = self.compilar(PROGRAMA.replace("PORTA", str(porta)), "coordenador")
+        outro = self.compilar(PROGRAMA.replace("PORTA", str(porta)).replace("x * x", "x * x + 1"), "outro")
+        self.iniciar_worker(outro, porta)
+        run = subprocess.run([coordenador], capture_output=True, text=True, timeout=30)
+        self.assertEqual(run.returncode, 1)
+        self.assertIn("programa diferente", run.stderr)
 
     def test_join_com_tempo_para_o_programa_quando_passa_do_limite(self):
         code = ("func demora(n) { var s = 0; var i = 0; while (i < n) { s = s + i; i = i + 1; } return s; }\n"
@@ -141,6 +163,17 @@ class ExecucaoDistribuidaTests(unittest.TestCase):
         self.assertLess(time.monotonic() - inicio, 10)
         self.assertEqual(run.returncode, 1)
         self.assertIn("passou do tempo limite de 50 ms", run.stderr)
+
+    def test_sem_worker_o_join_avisa_o_erro(self):
+        porta = porta_livre()
+        code = ("func f(x) { return x; }\n"
+                f'var c = c_channel("127.0.0.1", {porta});\n'
+                "var t = fork f(1) on c;\n"
+                "print(join(t));\n")
+        exe = self.compilar(code, "sem_worker")
+        run = subprocess.run([exe], capture_output=True, text=True, timeout=30)
+        self.assertEqual(run.returncode, 1)
+        self.assertIn("o worker esta rodando?", run.stderr)
 
 
 
