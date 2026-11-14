@@ -62,7 +62,7 @@ Comentários iniciados por `#` são descartados pelo lexer antes da geração de
 class  extends  new  func  var
 if  else  while  do  for  in
 break  continue  return
-seq  par  fork  join  this
+seq  par  fork  join  on  this
 c_channel  send  receive  input  print  matrix
 true  false
 number  int  string  bool  void  list  dict
@@ -298,10 +298,10 @@ par {
 Para dividir tarefas de forma recursiva ou dinâmica, a linguagem disponibiliza `fork` e `join`. O `fork` dispara uma chamada de função (ou método) em uma nova thread e retorna um manipulador (handle). O `join` recebe esse manipulador para aguardar o término e coletar o resultado.
 
 ```bnf
-<expressao_fork> ::= "fork" <expressao>
+<expressao_fork> ::= "fork" <expressao> [ "on" <expressao> ]
 <comando_fork>   ::= <expressao_fork> ";"
-<comando_join>   ::= "join" "(" <expressao> ")" ";"
-<expressao_join> ::= "join" "(" <expressao> ")"
+<comando_join>   ::= <expressao_join> ";"
+<expressao_join> ::= "join" "(" <expressao> [ "," <expressao> ] ")"
 ```
 
 Sintaticamente, o operando de `fork` é uma expressão qualquer; é o analisador semântico que exige que ela seja uma chamada de função ou de método. Por isso `fork f(x) + 1` é rejeitado na análise semântica, não na sintática. `fork` também pode aparecer como comando isolado (`fork f(x);`), descartando o resultado.
@@ -322,6 +322,40 @@ var res1 = join(t1);
 var res2 = join(t2);
 var total = res1 + res2;
 ```
+
+### 6.4 Fork e Join entre Computadores (2026.2)
+
+O `fork` pode mandar a tarefa para **outro computador** com `on <canal>`, onde `<canal>` é um `c_channel(ip, porta)` que aponta para o outro computador. O `join` pode receber um **tempo limite** em milissegundos: `join(t, ms)`. Se a tarefa não terminar nesse tempo, o programa para com `[ERRO EXECUCAO] join: a tarefa N passou do tempo limite de ms ms.`
+
+```bnf
+<expressao_fork> ::= "fork" <chamada_funcao> "on" <expressao>      (* <expressao> do tipo c_channel *)
+<expressao_join> ::= "join" "(" <expressao> "," <expressao> ")"    (* tempo limite em ms *)
+```
+
+No outro computador roda **o mesmo executável** em modo worker: `./programa --worker PORTA`. O fork manda o nome da função e os argumentos (números) pela rede, o worker executa a função e devolve o resultado. Os dois lados conferem um id do programa: se os executáveis forem de códigos diferentes, o `join` mostra `programa diferente`.
+
+**Exemplo** (ver `tests/distribuido/teste12_fork_join_dois_computadores.minipar`):
+
+```minipar
+var outro_computador = c_channel("192.168.0.20", 7000);
+var t1 = fork soma_quadrados(1, 10000);                          # roda aqui
+var t2 = fork soma_quadrados(10001, 20000) on outro_computador;  # roda no outro computador
+var p1 = join(t1);
+var p2 = join(t2, 10000);                                        # espera no máximo 10 s
+```
+
+**Regras semânticas do fork/join (códigos):**
+
+| Código | Regra | Exemplo com erro |
+|--------|-------|------------------|
+| `SEM_FJ_01` | `fork` precisa de uma chamada de função ou método | `fork 5` |
+| `SEM_FJ_02` | `join` precisa de uma tarefa criada por `fork` | `join("texto")` |
+| `SEM_FJ_03` | o destino de `fork ... on` precisa ser um `c_channel` | `fork f(1) on "127.0.0.1:7000"` |
+| `SEM_FJ_04` | o tempo limite do `join` precisa ser um número | `join(t, "muito")` |
+| `SEM_FJ_05` | `fork ... on` só chama função declarada com `func` (não método nem função pronta) | `fork len(xs) on canal` |
+| `SEM_FJ_06` | `fork ... on` só envia números como argumento | `fork f("oi") on canal` |
+
+A mensagem sai assim: `[ERRO SEMANTICO] [SEM_FJ_03] Linha 2: ...`.
 
 ---
 
@@ -903,7 +937,7 @@ A seguir a gramática completa em formato BNF, em ordem de definição:
 <comando_return>    ::= "return" ( <expressao> [ ";" ] | ";" )
 <comando_break>     ::= "break" [ ";" ]
 <comando_continue>  ::= "continue" [ ";" ]
-<comando_join>      ::= "join" "(" <expressao> ")" ";"
+<comando_join>      ::= <expressao_join> ";"
 
 
 (* ─── BLOCOS E PARALELISMO ─── *)
@@ -913,10 +947,11 @@ A seguir a gramática completa em formato BNF, em ordem de definição:
 
 <bloco_par> ::= "par" "{" { <comando> } "}"
 
-<expressao_fork> ::= "fork" <expressao>
-(* o analisador semântico exige que a expressão seja chamada de função ou método *)
+<expressao_fork> ::= "fork" <expressao> [ "on" <expressao> ]
+(* o analisador semântico exige que a expressão seja chamada de função ou método;
+   com "on", a segunda expressão é o c_channel do outro computador *)
 <comando_fork>   ::= <expressao_fork> ";"
-<expressao_join> ::= "join" "(" <expressao> ")"
+<expressao_join> ::= "join" "(" <expressao> [ "," <expressao> ] ")"   (* 2ª expressão: tempo limite em ms *)
 
 
 (* ─── ESTRUTURAS DE CONTROLE ─── *)
@@ -1097,8 +1132,9 @@ Os erros saem em `stderr` no formato `[ERRO SEMANTICO] Linha N (Funcao: f): mens
 | Atributo inexistente | `Atributo 'a' nao declarado em 'C'.` |
 | `break`/`continue` fora de laço | `'break' usado fora de laco.` |
 | Alterar caractere de texto (`s[i] = ...`) | `Nao da para alterar um caractere de texto com s[i] = ...; use substr e +.` |
-| `fork` sem chamada | `A expressao 'fork' exige uma chamada de funcao ou metodo.` |
-| `join` com argumento que não é tarefa | `A expressao 'join' exige um identificador de tarefa, recebido: 'T'.` |
+| `fork` sem chamada (`SEM_FJ_01`) | `[SEM_FJ_01] ... A expressao 'fork' exige uma chamada de funcao ou metodo.` |
+| `join` com argumento que não é tarefa (`SEM_FJ_02`) | `[SEM_FJ_02] ... A expressao 'join' exige um identificador de tarefa, recebido: 'T'.` |
+| Fork/join distribuído (`SEM_FJ_03` a `SEM_FJ_06`) | ver a tabela da seção 6.4 |
 
 ### Geração de Código C++20
 
@@ -1127,6 +1163,8 @@ Os erros saem em `stderr` no formato `[ERRO SEMANTICO] Linha N (Funcao: f): mens
 | `var x = e;` / `tipo x = e;` | `auto x = e;` (sem valor: `auto x = 0;`) |
 | `fork f(args)` | `__fork([=]() mutable { return f(args); })`: roda em `std::async` e devolve o número da tarefa (`double`) |
 | `join(t)` | `__join(t)`: espera a tarefa e devolve o resultado (`double`) |
+| `fork f(args) on canal` | `__fork_remote(canal, "f", std::vector<double>{args})`: manda a tarefa para o worker do canal (MINIP-30) |
+| `join(t, ms)` | `__join(t, ms)`: como `join(t)`, mas para o programa com erro se passar de `ms` milissegundos |
 | `parse_ints(s)` | `__parse_ints(s)` |
 | `lista.append(v)` / `.push_back(v)` | `lista.push_back(v)` |
 | `lista.pop()` | `__array_pop(lista)` |

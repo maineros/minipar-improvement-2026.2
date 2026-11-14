@@ -175,6 +175,14 @@ class ExecucaoDistribuidaTests(unittest.TestCase):
         self.assertEqual(run.returncode, 1)
         self.assertIn("o worker esta rodando?", run.stderr)
 
+    def test_teste12_bate_com_a_versao_sequencial(self):
+        porta = porta_livre()
+        fonte = (ROOT / "tests/distribuido/teste12_fork_join_dois_computadores.minipar").read_text(encoding="utf-8")
+        exe = self.compilar(fonte.replace("var porta = 7000;", f"var porta = {porta};"), "teste12")
+        self.iniciar_worker(exe, porta)
+        run = subprocess.run([exe], input="127.0.0.1\n", capture_output=True, text=True, timeout=60)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertIn("RESULTADO: OK", run.stdout)
 
 
 if __name__ == "__main__":
