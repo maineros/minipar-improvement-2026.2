@@ -344,6 +344,7 @@ class CppCodeGenerator(I_GeradorCPP):
 
         cpp_code += self._remote_dispatch(program)
         cpp_code += "int main(int argc, char** argv) {\n    #ifdef _WIN32\n        WSADATA wsa;\n        WSAStartup(MAKEWORD(2,2), &wsa);\n    #endif\n"
+        cpp_code += "    std::set_terminate(__minipar_terminate);\n"
         # ./programa --worker PORTA: espera tarefas de outro computador (fork ... on canal)
         cpp_code += '    if (argc >= 3 && std::string(argv[1]) == "--worker") return __worker_main(std::atoi(argv[2]));\n\n'
         for node in program.statements:

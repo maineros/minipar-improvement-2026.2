@@ -11,6 +11,7 @@ _CPP_HEADER = """\
 #include <cstdlib>
 #include <type_traits>
 #include <stdexcept>
+#include <exception>
 #include <algorithm>
 #include <future>
 #include <mutex>
@@ -104,6 +105,20 @@ std::string input() {
 std::string input(const std::string& prompt) {
     std::cout << prompt;
     return input();
+}
+
+// Erro nao tratado em qualquer thread (ex.: canal sem conexao): em vez de
+// "terminate called after throwing...", mostra [ERRO EXECUCAO] com o motivo.
+inline void __minipar_terminate() {
+    if (std::exception_ptr erro = std::current_exception()) {
+        try {
+            std::rethrow_exception(erro);
+        } catch (const std::exception& e) {
+            __fail_now(e.what());
+        } catch (...) {
+        }
+    }
+    __fail_now("erro inesperado durante a execucao.");
 }
 
 // to_number(s): converte texto em numero. Entrada vazia ou invalida (ex.: "abc",

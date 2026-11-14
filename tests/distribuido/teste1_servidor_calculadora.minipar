@@ -1,0 +1,61 @@
+# Teste 1 em dois computadores: SERVIDOR da calculadora (computador_2)
+#
+# Mesmo programa do teste1_calculadora_cliente_servidor.minipar, mas com o
+# servidor e o cliente em executaveis separados, para rodar em computadores
+# diferentes (o teste1 original roda os dois lados no mesmo programa, em localhost).
+#
+# Canais (c_channel) usados:
+#   requisicao: cliente (computador_1) -> servidor, porta 5101
+#   resposta:   servidor -> cliente (computador_1), porta 5102
+#
+# Como rodar:
+#   Computador 2:  ./teste1_servidor_calculadora   e digite o IP do computador 1
+#   Computador 1:  ./teste1_cliente_calculadora    e digite o IP do computador 2
+# Para testar num computador so, use 127.0.0.1 nos dois.
+
+# Calcula a operacao aritmetica recebida como texto ("+", "-", "*", "/").
+func calcular(op, v1, v2) {
+    if (op == "+") {
+        return v1 + v2;
+    }
+    if (op == "-") {
+        return v1 - v2;
+    }
+    if (op == "*") {
+        return v1 * v2;
+    }
+    return v1 / v2;
+}
+
+seq {
+    print("==== Calculadora - SERVIDOR (computador_2) ====");
+    var ip_cliente = input("IP do computador cliente (computador_1): ");
+
+    # O servidor escuta a porta 5101 e responde na porta 5102 do cliente.
+    var requisicao = c_channel("0.0.0.0", 5101);
+    var resposta = c_channel(ip_cliente, 5102);
+
+    print("Aguardando a requisicao do cliente na porta 5101...");
+    var op = receive(requisicao);
+    var s_v1 = receive(requisicao);
+    var s_v2 = receive(requisicao);
+    print("Servidor recebeu:", op, s_v1, s_v2);
+
+    var v1 = to_number(s_v1);
+    var v2 = to_number(s_v2);
+
+    # Tratamento de erros: operacao desconhecida e divisao por zero.
+    if (op != "+" && op != "-" && op != "*" && op != "/") {
+        print("Operacao invalida recebida:", op);
+        send(resposta, "ERRO: operacao invalida (use +, -, * ou /)");
+    } else {
+        if (op == "/" && v2 == 0) {
+            print("Divisao por zero recusada.");
+            send(resposta, "ERRO: divisao por zero");
+        } else {
+            var res = calcular(op, v1, v2);
+            print("Resultado enviado ao cliente:", res);
+            send(resposta, res);
+        }
+    }
+}
