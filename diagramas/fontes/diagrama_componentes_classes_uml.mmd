@@ -1,0 +1,178 @@
+---
+title: Diagrama de Componentes (classes UML) - Compilador MiniPar 2026.2
+---
+classDiagram
+    direction TB
+
+    %% ===== Interfaces com o usuario =====
+    class Menu_CLI {
+        <<Component>>
+        +iniciar_interacao() None
+        +exibir_resultados(texto: str) None
+    }
+    class IDE_Web_App {
+        <<Component>>
+        -host : str
+        -port : int
+        +iniciar_interacao() None
+        +exibir_resultados(texto: str) None
+    }
+    class I_Interface_Usuario {
+        <<Interface>>
+        +iniciar_interacao() None
+        +exibir_resultados(texto: str) None
+    }
+
+    %% ===== Orquestrador =====
+    class I_Orquestrador {
+        <<Interface>>
+        +compile_file(source_path, output_name, output_dir) bool
+    }
+    class MainCompiler {
+        <<Component>>
+        -criar_lexico : Callable → I_Lexico
+        -criar_sintatico : Callable → I_Sintatico
+        -criar_tabela : Callable → I_TabelaSimbolos
+        -criar_semantico : Callable → I_Semantico
+        -criar_gerador_tac : Callable → I_GeradorTAC
+        -criar_gerador_cpp : Callable → I_GeradorCPP
+        +lexico(codigo: str) I_Lexico
+        +sintatico(tokens: List~Token~) I_Sintatico
+        +semantico() I_Semantico
+        +gerador_tac() I_GeradorTAC
+        +gerador_cpp() I_GeradorCPP
+        +compile_file(source_path, output_name, output_dir) bool
+    }
+
+    %% ===== Fases =====
+    class I_Lexico {
+        <<Interface>>
+        +has_errors : bool
+        +tokenize() List~Token~
+    }
+    class Lexer {
+        <<Component>>
+        -_source : str
+        +errors : List~LexicalError~
+        +has_errors : bool
+        +tokenize() List~Token~
+    }
+    class I_Sintatico {
+        <<Interface>>
+        +parse() Program
+    }
+    class Parser {
+        <<Component>>
+        -_tokens : List~Token~
+        -_pos : int
+        +parse() Program
+    }
+    class I_Semantico {
+        <<Interface>>
+        +analyze(program: Program) bool
+    }
+    class SemanticAnalyzer {
+        <<Component>>
+        +tabela : I_TabelaSimbolos
+        -_has_errors : bool
+        +analyze(program: Program) bool
+    }
+    class I_TabelaSimbolos {
+        <<Interface>>
+        +entrar_escopo() None
+        +sair_escopo() None
+        +definir(simbolo: Symbol) bool
+        +buscar(nome: str) Symbol
+        +registrar_funcao(simbolo: Symbol) None
+        +buscar_funcao(nome: str) Symbol
+        +registrar_classe(simbolo: Symbol) None
+        +buscar_classe(nome: str) Symbol
+        +listar() Dict
+    }
+    class TabelaSimbolos {
+        <<Component>>
+        -_escopos : List[Dict[str, Symbol]]
+        -_funcoes : Dict[str, Symbol]
+        -_classes : Dict[str, Symbol]
+        +profundidade : int
+        +entrar_escopo() None
+        +sair_escopo() None
+        +definir(simbolo: Symbol) bool
+        +buscar(nome: str) Symbol
+        +registrar_funcao(simbolo: Symbol) None
+        +buscar_funcao(nome: str) Symbol
+        +registrar_classe(simbolo: Symbol) None
+        +buscar_classe(nome: str) Symbol
+        +listar() Dict
+    }
+    class Symbol {
+        <<dataclass>>
+        +name : str
+        +type : str
+        +params : List~str~
+        +attributes : Dict[str, str]
+        +methods : Dict[str, List[str]]
+    }
+    class I_GeradorTAC {
+        <<Interface>>
+        +generate_text(program: Program) str
+        +generate(program, output_name, output_dir) str
+    }
+    class TACGenerator {
+        <<Component>>
+        +generate_text(program: Program) str
+        +generate(program, output_name, output_dir) str
+    }
+    class I_GeradorCPP {
+        <<Interface>>
+        +generate_text(program: Program) str
+        +generate(program, output_name, output_dir) bool
+    }
+    class CppCodeGenerator {
+        <<Component>>
+        +generate_text(program: Program) str
+        +generate(program, output_name, output_dir) bool
+    }
+
+    %% ===== Realizacao (componente implementa a interface) =====
+    I_Interface_Usuario <|.. Menu_CLI : realiza
+    I_Interface_Usuario <|.. IDE_Web_App : realiza
+    I_Orquestrador <|.. MainCompiler : realiza
+    I_Lexico <|.. Lexer : realiza
+    I_Sintatico <|.. Parser : realiza
+    I_Semantico <|.. SemanticAnalyzer : realiza
+    I_TabelaSimbolos <|.. TabelaSimbolos : realiza
+    I_GeradorTAC <|.. TACGenerator : realiza
+    I_GeradorCPP <|.. CppCodeGenerator : realiza
+
+    %% ===== Dependencia (usa / requer a interface) =====
+    Menu_CLI ..> I_Orquestrador : usa
+    IDE_Web_App ..> I_Orquestrador : usa
+    MainCompiler ..> I_Lexico : requer
+    MainCompiler ..> I_Sintatico : requer
+    MainCompiler ..> I_Semantico : requer
+    MainCompiler ..> I_GeradorTAC : requer
+    MainCompiler ..> I_GeradorCPP : requer
+    SemanticAnalyzer ..> I_TabelaSimbolos : requer
+    MainCompiler ..> I_TabelaSimbolos : cria
+    TabelaSimbolos "1" o-- "*" Symbol : guarda
+
+
+    style I_Interface_Usuario fill:#E6F7EE,stroke:#2B8A3E,stroke-width:2px
+    style I_Orquestrador fill:#E6F7EE,stroke:#2B8A3E,stroke-width:2px
+    style I_Lexico fill:#E6F7EE,stroke:#2B8A3E,stroke-width:2px
+    style I_Sintatico fill:#E6F7EE,stroke:#2B8A3E,stroke-width:2px
+    style I_Semantico fill:#E6F7EE,stroke:#2B8A3E,stroke-width:2px
+    style I_TabelaSimbolos fill:#E6F7EE,stroke:#2B8A3E,stroke-width:2px
+    style I_GeradorTAC fill:#E6F7EE,stroke:#2B8A3E,stroke-width:2px
+    style I_GeradorCPP fill:#E6F7EE,stroke:#2B8A3E,stroke-width:2px
+    style MainCompiler fill:#EEF4FF,stroke:#3B5BDB,stroke-width:2px
+    style Lexer fill:#EEF4FF,stroke:#3B5BDB,stroke-width:2px
+    style Parser fill:#EEF4FF,stroke:#3B5BDB,stroke-width:2px
+    style SemanticAnalyzer fill:#EEF4FF,stroke:#3B5BDB,stroke-width:2px
+    style TabelaSimbolos fill:#EEF4FF,stroke:#3B5BDB,stroke-width:2px
+    style TACGenerator fill:#EEF4FF,stroke:#3B5BDB,stroke-width:2px
+    style CppCodeGenerator fill:#EEF4FF,stroke:#3B5BDB,stroke-width:2px
+    style Menu_CLI fill:#FFF4E6,stroke:#D9480F,stroke-width:2px
+    style IDE_Web_App fill:#FFF4E6,stroke:#D9480F,stroke-width:2px
+    style Symbol fill:#F1F3F5,stroke:#868E96,stroke-width:2px

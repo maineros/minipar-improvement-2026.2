@@ -1,0 +1,57 @@
+---
+title: Diagrama de Componentes no Contexto da Linguagem - Compilador MiniPar 2026.2
+---
+flowchart TB
+    subgraph USU["Interfaces#nbsp;com#nbsp;o#nbsp;usuário"]
+        direction LR
+        CLI["<b>Menu_CLI</b><br/><i>«component»</i><br/>menu.py<br/><small>Menu de testes no terminal<br/>realiza I_Interface_Usuario</small>"]
+        WEB["<b>IDE_Web_App</b><br/><i>«component»</i><br/>app.py (Flask)<br/><small>IDE didática e interface 2026.1 (/legacy)<br/>realiza I_Interface_Usuario</small>"]
+    end
+
+    ORQ["<b>MainCompiler</b><br/><i>«component» Orquestrador</i><br/>src/orquestrador.py<br/><small>Liga as fases na ordem e entrega cada componente pela sua interface</small>"]
+
+    subgraph MOTOR["Motor#nbsp;do#nbsp;Compilador#nbsp;MiniPar"]
+        direction LR
+        LEX["<b>Analisador Léxico</b><br/><i>«component» Lexer</i><br/>src/lexer.py<br/><small>Gera a lista de tokens e para a compilação se houver erro léxico</small>"]
+        SIN["<b>Analisador Sintático</b><br/><i>«component» Parser</i><br/>src/parser.py<br/><small>Confere a gramática e monta a AST</small>"]
+        SEM["<b>Analisador Semântico</b><br/><i>«component» SemanticAnalyzer</i><br/>src/semantic.py<br/><small>Declarações, escopo, tipos e regras de fork/join (SEM_FJ)</small>"]
+        TAC["<b>Gerador de TAC</b><br/><i>«component» TACGenerator</i><br/>src/tac.py<br/><small>Código de três endereços (.tac)</small>"]
+        CPP["<b>Gerador de C++</b><br/><i>«component» CppCodeGenerator</i><br/>src/codegen.py + cpp_template.py<br/><small>C++20 com threads, fork/join, canais e worker; chama o g++ -O3</small>"]
+    end
+
+    subgraph DADOS["Dados#nbsp;da#nbsp;análise"]
+        TS[("<b>Tabela de Símbolos</b><br/><i>«component» TabelaSimbolos</i><br/>src/symbol_table.py<br/><small>Escopos de variáveis, funções e classes</small>")]
+    end
+
+    GPP[["<b>g++ -O3 (C++20)</b><br/><small>gera o executável</small>"]]
+
+    CLI -- "usa<br/>«I_Orquestrador»" --> ORQ
+    WEB -- "usa<br/>«I_Orquestrador»<br/><small>(main.py e analysis_worker.py)</small>" --> ORQ
+
+    ORQ -- "«I_Lexico»" --> LEX
+    ORQ -- "«I_Sintatico»" --> SIN
+    ORQ -- "«I_Semantico»" --> SEM
+    ORQ -- "«I_GeradorTAC»" --> TAC
+    ORQ -- "«I_GeradorCPP»" --> CPP
+    ORQ -. "cria<br/>«I_TabelaSimbolos»" .-> TS
+
+    LEX == "tokens" ==> SIN
+    SIN == "AST" ==> SEM
+    SEM == "AST validada" ==> TAC
+    SEM == "AST validada" ==> CPP
+    SEM -- "define, busca e<br/>abre/fecha escopos<br/>«I_TabelaSimbolos»" --> TS
+    CPP -- ".cpp" --> GPP
+
+    classDef ui fill:#FFF4E6,stroke:#D9480F,stroke-width:2px,color:#2b1a0e
+    classDef orq fill:#F3F0FF,stroke:#6741D9,stroke-width:2px,color:#1f1640
+    classDef comp fill:#EEF4FF,stroke:#3B5BDB,stroke-width:2px,color:#1b1f24
+    classDef dado fill:#E6F7EE,stroke:#2B8A3E,stroke-width:2px,color:#14301d
+    classDef ext fill:#F1F3F5,stroke:#868E96,stroke-width:2px,color:#212529
+    class CLI,WEB ui
+    class ORQ orq
+    class LEX,SIN,SEM,TAC,CPP comp
+    class TS dado
+    class GPP ext
+    style USU fill:#FFFBF5,stroke:#D9480F,stroke-dasharray:6 4
+    style MOTOR fill:#F8FAFF,stroke:#3B5BDB,stroke-dasharray:6 4
+    style DADOS fill:#F4FBF6,stroke:#2B8A3E,stroke-dasharray:6 4

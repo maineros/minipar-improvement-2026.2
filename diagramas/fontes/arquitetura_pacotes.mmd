@@ -1,0 +1,63 @@
+---
+title: Arquitetura do Compilador MiniPar 2026.2 (notação de pacotes UML)
+---
+flowchart TB
+    subgraph P_UI["«package»#nbsp;Interface#nbsp;(Web#nbsp;e#nbsp;CLI)"]
+        direction LR
+        WEB["<b>IDE Web (Flask)</b><br/><small>app.py · templates/ · static/<br/>web_execution.py · analysis_worker.py</small>"]
+        WEB ~~~ CLI
+        CLI["<b>Menu do Terminal</b><br/><small>main.py · menu.py<br/>test_orchestrator.py</small>"]
+    end
+
+    subgraph P_ORQ["«package»#nbsp;Orquestração"]
+        ORQ["<b>MainCompiler</b><br/><small>src/orquestrador.py</small>"]
+    end
+
+    subgraph P_CONTRATOS["«package»#nbsp;Contratos"]
+        IFS["<b>Interfaces I_*</b><br/><small>src/interfaces.py<br/>I_Lexico · I_Sintatico · I_Semantico · I_TabelaSimbolos<br/>I_GeradorTAC · I_GeradorCPP · I_Orquestrador · I_Interface_Usuario</small>"]
+    end
+
+    subgraph P_FRONT["«package»#nbsp;Front‑end#nbsp;do#nbsp;Compilador"]
+        direction TB
+        LEX["<b>Análise Léxica</b><br/><small>src/lexer.py</small>"]
+        SIN["<b>Análise Sintática</b><br/><small>src/parser.py · src/ast_nodes.py</small>"]
+        SEM["<b>Análise Semântica</b><br/><small>src/semantic.py</small>"]
+        TS[("<b>Tabela de Símbolos</b><br/><small>src/symbol_table.py</small>")]
+        LEX -- "tokens" --> SIN
+        SIN -- "AST" --> SEM
+        SEM -. "usa" .-> TS
+    end
+
+    subgraph P_BACK["«package»#nbsp;Back‑end#nbsp;do#nbsp;Compilador"]
+        direction LR
+        TAC["<b>Código Intermediário (TAC)</b><br/><small>src/tac.py</small>"]
+        CPP["<b>Geração de C++20</b><br/><small>src/codegen.py · src/cpp_template.py</small>"]
+        TAC ~~~ CPP
+    end
+
+    subgraph P_EXEC["«package»#nbsp;Ambiente#nbsp;de#nbsp;Execução"]
+        direction LR
+        GPP["<b>Compilador g++ -O3</b>"]
+        BIN["<b>Executável gerado</b><br/><small>threads (par) · fork/join<br/>canais c_channel · modo --worker</small>"]
+        GPP -- "gera" --> BIN
+    end
+
+    P_UI -- "dispara a compilação" --> P_ORQ
+    P_ORQ -- "1 · tokens, AST e semântica" --> P_FRONT
+    P_ORQ -- "2 · TAC e C++" --> P_BACK
+    P_FRONT -- "AST validada" --> P_BACK
+    P_ORQ -. "«import»" .-> P_CONTRATOS
+    P_FRONT -. "«import»" .-> P_CONTRATOS
+    P_BACK -. "«import»" .-> P_CONTRATOS
+    P_BACK -- "invoca o g++" --> P_EXEC
+
+    classDef box fill:#FFFFFF,stroke:#343A40,stroke-width:1.5px,color:#212529
+    classDef dado fill:#E6F7EE,stroke:#2B8A3E,stroke-width:1.5px,color:#14301d
+    class WEB,CLI,ORQ,IFS,LEX,SIN,SEM,TAC,CPP,GPP,BIN box
+    class TS dado
+    style P_UI fill:#FFF0F6,stroke:#C2255C,stroke-width:1.5px
+    style P_ORQ fill:#F3F0FF,stroke:#6741D9,stroke-width:1.5px
+    style P_CONTRATOS fill:#FFF9DB,stroke:#E67700,stroke-width:1.5px
+    style P_FRONT fill:#FFF4E6,stroke:#D9480F,stroke-width:1.5px
+    style P_BACK fill:#E3FAFC,stroke:#0C8599,stroke-width:1.5px
+    style P_EXEC fill:#EBFBEE,stroke:#2B8A3E,stroke-width:1.5px
